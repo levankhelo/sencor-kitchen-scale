@@ -5,12 +5,12 @@ import logging
 from datetime import datetime
 from typing import Callable
 
-from bleak import BleakClient
+from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak_retry_connector import establish_connection
 from homeassistant.core import HomeAssistant
 
-from .const import LISTEN_WINDOW
+from .const import LISTEN_WINDOW, RESOLVE_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,6 +68,7 @@ class SencorScaleManager:
         self._device_names: dict[str, str] = dict(device_names)
         self._callbacks: dict[str, set[WeightCallback]] = {}
         self._zero_reported: dict[str, bool] = {}
+        self._known_devices: set[str] = set(device_names.keys())
 
     async def start(self) -> None:
         """Start background tasks."""
@@ -114,7 +115,12 @@ class SencorScaleManager:
         """Maintain connection/retries for a single device indefinitely."""
         while not self._stop_event.is_set():
             try:
-                ble_device = BLEDevice(address=address, name=name, metadata={}, details=None)
+                ble_device = await self._resolve_device(address, name)
+                if ble_device is None:
+                    _LOGGER.debug("Failed to resolve %s; will retry", address)
+                    await self._wait_with_stop(self.off_scan_interval)
+                    continue
+
                 client = await establish_connection(
                     BleakClient, ble_device, address, ble_device_callback=None
                 )
@@ -209,3 +215,25 @@ class SencorScaleManager:
             await asyncio.wait_for(self._stop_event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             return
+
+    async def _resolve_device(self, address: str, name: str) -> BLEDevice | None:
+        """Scan briefly to resolve the BLEDevice before connecting."""
+        device = await BleakScanner.find_device_by_address(
+            address, timeout=RESOLVE_TIMEOUT, cb=None
+        )
+        if device:
+            return device
+        # Fallback to manual BLEDevice construction
+        return BLEDevice(address=address, name=name, metadata={}, details=None)
+
+    async def refresh_devices(self, devices: dict[str, str]) -> None:
+        """Add new devices from config without dropping current tasks."""
+        new_devices = set(devices.keys()) - self._known_devices
+        self._device_names.update(devices)
+        self._known_devices.update(devices.keys())
+
+        for address in new_devices:
+            name = devices[address]
+            task = self.hass.loop.create_task(self._run_device(address, name))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)

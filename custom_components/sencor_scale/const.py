@@ -7,3 +7,4 @@ CONF_OFF_SCAN_INTERVAL = "off_scan_interval"
 DEFAULT_SCAN_INTERVAL = 10  # seconds; 0 means continuous streaming
 DEFAULT_OFF_SCAN_INTERVAL = 5  # seconds between retries when device is offline
 LISTEN_WINDOW = 5  # seconds to stay connected per polling cycle
+RESOLVE_TIMEOUT = 5  # seconds to scan for device address before connecting
