@@ -135,15 +135,14 @@ async def connect_and_stream_data(
                                 except Exception as e:
                                     print(f"  Error reading {char.uuid}: {e}")
                 else:
-                    # Create notification handler
+                    # Create notification handler that uses the open file handle
                     def notification_handler(
                         sender: int, data: bytearray
                     ) -> None:
                         formatted = format_data(data)
                         print(formatted)
-                        with open(output_file, "a", encoding="utf-8") as fh:
-                            fh.write(formatted + "\n")
-                            fh.flush()
+                        f.write(formatted + "\n")
+                        f.flush()
 
                     # Subscribe to all notify characteristics
                     for char in notify_chars:
