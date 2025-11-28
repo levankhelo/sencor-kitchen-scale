@@ -9,6 +9,7 @@ from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 from homeassistant.core import HomeAssistant
+from bleak_retry_connector import establish_connection
 
 from .const import DEVICE_NAME, LISTEN_WINDOW
 
@@ -148,7 +149,10 @@ class SencorScaleManager:
     async def _connect_and_listen(self, device: BLEDevice) -> None:
         """Connect to a device and read/stream weight."""
         try:
-            async with BleakClient(device.address) as client:
+            client = await establish_connection(
+                BleakClient, device, device.address, ble_device_callback=None
+            )
+            async with client:
                 if not client.is_connected:
                     _LOGGER.warning("Failed to connect to %s", device.address)
                     return

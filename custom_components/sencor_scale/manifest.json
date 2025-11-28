@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "documentation": "https://github.com/levankhelo/sencor-kitchen-scale",
   "requirements": [
-    "bleak>=0.22.2"
+    "bleak>=0.22.2",
+    "bleak-retry-connector>=3.4.0"
   ],
   "codeowners": [
     "@levankhelo"
