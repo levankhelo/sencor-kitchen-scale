@@ -21,7 +21,7 @@ A lightweight custom component lives in `custom_components/sencor_scale`:
 
 1) Copy the `custom_components/sencor_scale` folder into your Home Assistant `/config/custom_components/` directory.
 2) Restart Home Assistant.
-3) Add the integration via **Settings → Devices & Services → Add Integration → Sencor Kitchen Scale**.
+3) Add the integration via **Settings → Devices & Services → Add Integration → Sencor Kitchen Scale**. The setup flow scans for nearby Sencor scales and lists them by MAC address (you can rename before finishing).
 4) Choose your scan interval (seconds). `0` = always connected streaming; otherwise a polling loop with a short listen window per cycle.
 
 ### HACS install (recommended)

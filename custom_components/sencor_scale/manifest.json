@@ -1,7 +1,7 @@
 {
   "domain": "sencor_scale",
   "name": "Sencor Kitchen Scale",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "documentation": "https://github.com/levankhelo/sencor-kitchen-scale",
   "requirements": [
     "bleak>=0.22.2",

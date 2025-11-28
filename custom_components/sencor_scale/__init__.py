@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import CONF_SCAN_INTERVAL, CONF_DEVICES, DEFAULT_SCAN_INTERVAL, DOMAIN
 from .ble_manager import SencorScaleManager
 
 PLATFORMS: list[str] = ["sensor"]
@@ -27,7 +27,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_SCAN_INTERVAL, entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
 
-    manager = SencorScaleManager(hass, scan_interval=scan_interval)
+    device_names = entry.data.get(CONF_DEVICES, {})
+    manager = SencorScaleManager(
+        hass,
+        scan_interval=scan_interval,
+        device_names=device_names,
+    )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {"manager": manager}
 
     await manager.start()

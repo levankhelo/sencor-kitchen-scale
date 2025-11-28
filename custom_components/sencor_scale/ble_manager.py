@@ -53,13 +53,13 @@ def format_payload(payload: bytes | bytearray) -> str:
 class SencorScaleManager:
     """Manage BLE discovery and streaming for Sencor scales."""
 
-    def __init__(self, hass: HomeAssistant, scan_interval: int) -> None:
+    def __init__(self, hass: HomeAssistant, scan_interval: int, device_names: dict[str, str]) -> None:
         self.hass = hass
         self.scan_interval = scan_interval
         self._stop_event = asyncio.Event()
         self._tasks: set[asyncio.Task] = set()
         self._weights: dict[str, float] = {}
-        self._device_names: dict[str, str] = {}
+        self._device_names: dict[str, str] = dict(device_names)
         self._callbacks: dict[str, set[WeightCallback]] = {}
         self._zero_reported: dict[str, bool] = {}
 
@@ -138,7 +138,7 @@ class SencorScaleManager:
             if device.name and DEVICE_NAME.lower() in device.name.lower():
                 if device not in found:
                     found.append(device)
-                    self._device_names[device.address] = device.name
+                    self._device_names.setdefault(device.address, device.name or device.address)
 
         scanner = BleakScanner(detection_callback=detection_callback)
         await scanner.start()
