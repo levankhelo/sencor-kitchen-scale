@@ -8,6 +8,25 @@ Extract scale data from Sencor kitchen scales using BLE (Bluetooth Low Energy).
 - Displays data as console output stream (each data blob on a new line)
 - Stores output in `output.txt` file
 
+## Home Assistant custom integration
+
+A lightweight custom component lives in `custom_components/sencor_scale`:
+
+- Automatically discovers nearby Sencor scales (`sencorfood`) and creates sensors per device (rename them in Home Assistant UI as needed).
+- Configurable scan interval: set to `0` for continuous streaming, or any positive number of seconds to poll at that cadence (each poll opens a short BLE session and listens for weight notifications).
+
+### Install
+
+1) Copy the `custom_components/sencor_scale` folder into your Home Assistant `/config/custom_components/` directory.
+2) Restart Home Assistant.
+3) Add the integration via **Settings → Devices & Services → Add Integration → Sencor Kitchen Scale**.
+4) Choose your scan interval (seconds). `0` = always connected streaming; otherwise a polling loop with a short listen window per cycle.
+
+### Notes/assumptions
+
+- BLE connection/notification handling is performed with `bleak`; ensure your Home Assistant host has working Bluetooth.
+- Weight parsing uses bytes 2–3 for the value (big endian) and byte 7 as a sign flag (1 = negative).
+
 ## Requirements
 
 - Python 3.10+
