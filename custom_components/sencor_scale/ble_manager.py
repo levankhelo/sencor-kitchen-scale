@@ -60,6 +60,7 @@ class SencorScaleManager:
         self._weights: dict[str, float] = {}
         self._device_names: dict[str, str] = {}
         self._callbacks: dict[str, set[WeightCallback]] = {}
+        self._zero_reported: dict[str, bool] = {}
 
     async def start(self) -> None:
         """Start background tasks."""
@@ -170,6 +171,20 @@ class SencorScaleManager:
                     weight, details = parse_weight(data)
                     if weight is None:
                         return
+                    zero_seen = self._zero_reported.get(device.address, False)
+                    if weight == 0:
+                        if zero_seen:
+                            return  # ignore repeated zeros
+                        self._zero_reported[device.address] = True
+                        _LOGGER.debug(
+                            "Zero payload (suppressed for HA stats) from %s: %s",
+                            device.address,
+                            format_payload(data),
+                        )
+                        return
+
+                    # Non-zero reading: reset zero suppression and propagate.
+                    self._zero_reported[device.address] = False
                     _LOGGER.debug("Payload from %s: %s", device.address, format_payload(data))
                     self._notify(device.address, weight, details)
                     if self.scan_interval > 0:

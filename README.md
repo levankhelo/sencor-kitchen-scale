@@ -15,6 +15,7 @@ A lightweight custom component lives in `custom_components/sencor_scale`:
 
 - Automatically discovers nearby Sencor scales (`sencorfood`) and creates sensors per device (rename them in Home Assistant UI as needed).
 - Configurable scan interval: set to `0` for continuous streaming, or any positive number of seconds to poll at that cadence (each poll opens a short BLE session and listens for weight notifications).
+- Repeated zero weights are suppressed for Home Assistant statistics (first zero logs once for debugging; subsequent zeros are ignored until a non-zero reading arrives).
 
 ### Install
 
