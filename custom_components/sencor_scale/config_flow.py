@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from typing import Any
+import asyncio
 
 import voluptuous as vol
 from homeassistant import config_entries
+from bleak import BleakScanner
+from bleak.backends.device import BLEDevice
+from bleak.backends.scanner import AdvertisementData
 
 from .const import (
     CONF_DEVICES,
@@ -13,6 +17,7 @@ from .const import (
     DEFAULT_OFF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    DEVICE_NAME,
 )
 
 
@@ -26,18 +31,33 @@ class SencorScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.FlowResult:
         errors: dict[str, str] = {}
 
+        if not hasattr(self, "_discovered"):
+            self._discovered = await self._discover_devices()
+
         if user_input is not None:
-            mac = user_input[CONF_MAC_ADDRESS].strip()
             scan_interval = user_input[CONF_SCAN_INTERVAL]
             off_scan_interval = user_input[CONF_OFF_SCAN_INTERVAL]
-            if not mac:
-                errors["base"] = "no_mac"
+            devices: dict[str, str] = {}
+
+            # Include selected discovered devices
+            for device in getattr(self, "_discovered", []):
+                use_key = f"use_{device.address}"
+                name_key = f"name_{device.address}"
+                if user_input.get(use_key, True):
+                    devices[device.address] = user_input.get(name_key, device.address)
+
+            # Optional manual MAC entry
+            extra_mac = user_input.get(CONF_MAC_ADDRESS, "").strip()
+            if extra_mac:
+                devices[extra_mac] = user_input.get("extra_name", extra_mac)
+
+            if not devices:
+                errors["base"] = "no_devices_found"
             elif scan_interval < 0 or off_scan_interval < 0:
                 errors["base"] = "invalid_scan_interval"
             else:
-                await self.async_set_unique_id(mac.lower())
+                await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_configured()
-                devices: dict[str, str] = {mac: user_input.get("name", mac)}
                 return self.async_create_entry(
                     title="Sencor Kitchen Scales",
                     data={
@@ -49,17 +69,46 @@ class SencorScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         data_schema = vol.Schema(
             {
-                vol.Required(CONF_MAC_ADDRESS): str,
-                vol.Optional("name"): str,
-                vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.Coerce(
-                    int
-                ),
-                vol.Required(CONF_OFF_SCAN_INTERVAL, default=DEFAULT_OFF_SCAN_INTERVAL): vol.Coerce(
-                    int
-                ),
+                vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.Coerce(int),
+                vol.Required(
+                    CONF_OFF_SCAN_INTERVAL, default=DEFAULT_OFF_SCAN_INTERVAL
+                ): vol.Coerce(int),
+            }
+        )
+        # Add discovered devices with include toggles and names
+        for device in getattr(self, "_discovered", []):
+            data_schema = data_schema.extend(
+                {
+                    vol.Optional(f"use_{device.address}", default=True): bool,
+                    vol.Optional(
+                        f"name_{device.address}", default=device.name or device.address
+                    ): str,
+                }
+            )
+
+        # Optional manual entry
+        data_schema = data_schema.extend(
+            {
+                vol.Optional(CONF_MAC_ADDRESS, default=""): str,
+                vol.Optional("extra_name", default=""): str,
             }
         )
         return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
+
+    async def _discover_devices(self) -> list[BLEDevice]:
+        """Scan briefly for Sencor devices."""
+        found: list[BLEDevice] = []
+
+        def detection_callback(device: BLEDevice, adv_data: AdvertisementData) -> None:
+            if device.name and DEVICE_NAME.lower() in device.name.lower():
+                if all(device.address != d.address for d in found):
+                    found.append(device)
+
+        scanner = BleakScanner(detection_callback=detection_callback)
+        await scanner.start()
+        await asyncio.sleep(8)
+        await scanner.stop()
+        return found
 
 
 class SencorScaleOptionsFlowHandler(config_entries.OptionsFlow):

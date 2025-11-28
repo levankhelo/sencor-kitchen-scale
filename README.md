@@ -21,7 +21,7 @@ A lightweight custom component lives in `custom_components/sencor_scale`:
 
 1) Copy the `custom_components/sencor_scale` folder into your Home Assistant `/config/custom_components/` directory.
 2) Restart Home Assistant.
-3) Add the integration via **Settings → Devices & Services → Add Integration → Sencor Kitchen Scale**. Enter the scale's Bluetooth MAC address and (optionally) a friendly name.
+3) Add the integration via **Settings → Devices & Services → Add Integration → Sencor Kitchen Scale**. The setup flow scans for nearby Sencor scales (about 8s); select the ones to include and optionally rename them. You can also add a manual MAC if needed.
 4) Choose your scan interval (seconds) and offline retry interval (seconds). `0` scan interval = keep the connection open; otherwise connect, listen briefly, disconnect, and wait that many seconds. Offline retry interval is used when the device is unreachable to keep trying without giving up.
 
 ### HACS install (recommended)
@@ -29,7 +29,7 @@ A lightweight custom component lives in `custom_components/sencor_scale`:
 1) In HACS, open **Integrations → ⋮ → Custom repositories**.
 2) Add your repo URL, category **Integration**, and save.
 3) Find **Sencor Kitchen Scale** in HACS, install, then restart Home Assistant.
-4) Add the integration via **Settings → Devices & Services**, enter the scale MAC address, scan interval (`0` for continuous), and offline retry interval (seconds).
+4) Add the integration via **Settings → Devices & Services**, select discovered scales (or enter a MAC), scan interval (`0` for continuous), and offline retry interval (seconds).
 5) For updates, just pull the latest release in HACS; it handles copying to `/config/custom_components`.
 
 ### Notes/assumptions
