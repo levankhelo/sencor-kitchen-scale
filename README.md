@@ -22,6 +22,14 @@ A lightweight custom component lives in `custom_components/sencor_scale`:
 3) Add the integration via **Settings → Devices & Services → Add Integration → Sencor Kitchen Scale**.
 4) Choose your scan interval (seconds). `0` = always connected streaming; otherwise a polling loop with a short listen window per cycle.
 
+### HACS install (recommended)
+
+1) In HACS, open **Integrations → ⋮ → Custom repositories**.
+2) Add your repo URL, category **Integration**, and save.
+3) Find **Sencor Kitchen Scale** in HACS, install, then restart Home Assistant.
+4) Add the integration via **Settings → Devices & Services** and pick your scan interval (`0` for continuous, otherwise seconds between polls).
+5) For updates, just pull the latest release in HACS; it handles copying to `/config/custom_components`.
+
 ### Notes/assumptions
 
 - BLE connection/notification handling is performed with `bleak`; ensure your Home Assistant host has working Bluetooth.
