@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfMass
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 
 from .ble_manager import SencorScaleManager
@@ -81,6 +82,7 @@ class SencorScaleSensor(SensorEntity):
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
             identifiers={(DOMAIN, self._address)},
+            connections={(dr.CONNECTION_BLUETOOTH, self._address)},
             manufacturer="Sencor",
             model="Kitchen Scale",
             name=self.name,
