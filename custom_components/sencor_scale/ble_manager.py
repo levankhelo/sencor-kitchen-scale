@@ -5,13 +5,12 @@ import logging
 from datetime import datetime
 from typing import Callable
 
-from bleak import BleakClient, BleakScanner
+from bleak import BleakClient
 from bleak.backends.device import BLEDevice
-from bleak.backends.scanner import AdvertisementData
-from homeassistant.core import HomeAssistant
 from bleak_retry_connector import establish_connection
+from homeassistant.core import HomeAssistant
 
-from .const import DEVICE_NAME, LISTEN_WINDOW
+from .const import LISTEN_WINDOW
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,11 +50,18 @@ def format_payload(payload: bytes | bytearray) -> str:
 
 
 class SencorScaleManager:
-    """Manage BLE discovery and streaming for Sencor scales."""
+    """Manage BLE connections and streaming for Sencor scales."""
 
-    def __init__(self, hass: HomeAssistant, scan_interval: int, device_names: dict[str, str]) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        scan_interval: int,
+        off_scan_interval: int,
+        device_names: dict[str, str],
+    ) -> None:
         self.hass = hass
         self.scan_interval = scan_interval
+        self.off_scan_interval = off_scan_interval
         self._stop_event = asyncio.Event()
         self._tasks: set[asyncio.Task] = set()
         self._weights: dict[str, float] = {}
@@ -66,9 +72,10 @@ class SencorScaleManager:
     async def start(self) -> None:
         """Start background tasks."""
         self._stop_event.clear()
-        task = self.hass.loop.create_task(self._run())
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        for address, name in self._device_names.items():
+            task = self.hass.loop.create_task(self._run_device(address, name))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
 
     async def stop(self) -> None:
         """Stop background tasks."""
@@ -103,121 +110,102 @@ class SencorScaleManager:
         for cb in self._callbacks.get(address, set()):
             cb(address, weight, details)
 
-    async def _run(self) -> None:
-        """Main loop to scan and connect."""
+    async def _run_device(self, address: str, name: str) -> None:
+        """Maintain connection/retries for a single device indefinitely."""
         while not self._stop_event.is_set():
-            devices = await self._discover_devices()
-            if not devices:
-                _LOGGER.debug("No Sencor scales found in this scan.")
-            else:
-                _LOGGER.debug("Found %d Sencor scales", len(devices))
+            try:
+                ble_device = BLEDevice(address=address, name=name, metadata={}, details=None)
+                client = await establish_connection(
+                    BleakClient, ble_device, address, ble_device_callback=None
+                )
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.debug("Failed to establish connection to %s: %s", address, err)
+                await self._wait_with_stop(self.off_scan_interval)
+                continue
 
-            connect_tasks = [
-                self.hass.loop.create_task(self._connect_and_listen(device))
-                for device in devices
-            ]
-            for task in connect_tasks:
-                self._tasks.add(task)
-                task.add_done_callback(self._tasks.discard)
+            try:
+                async with client:
+                    if not client.is_connected:
+                        _LOGGER.debug("Client not connected to %s", address)
+                        await self._wait_with_stop(self.off_scan_interval)
+                        continue
 
-            if self.scan_interval == 0:
-                # Continuous streaming: just wait until stop is requested.
-                await self._stop_event.wait()
-            else:
-                try:
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=self.scan_interval)
-                except asyncio.TimeoutError:
-                    # Time to scan again
-                    continue
+                    services = client.services
+                    notify_chars = [
+                        char
+                        for svc in services
+                        for char in svc.characteristics
+                        if "notify" in char.properties or "indicate" in char.properties
+                    ]
 
-    async def _discover_devices(self) -> list[BLEDevice]:
-        """Discover nearby Sencor devices."""
-        found: list[BLEDevice] = []
+                    if not notify_chars:
+                        _LOGGER.debug("No notify characteristics on %s", address)
+                        await self._wait_with_stop(self.off_scan_interval)
+                        continue
 
-        def detection_callback(device: BLEDevice, adv_data: AdvertisementData) -> None:
-            if device.name and DEVICE_NAME.lower() in device.name.lower():
-                if device not in found:
-                    found.append(device)
-                    self._device_names.setdefault(device.address, device.name or device.address)
+                    done_event = asyncio.Event()
 
-        scanner = BleakScanner(detection_callback=detection_callback)
-        await scanner.start()
-        await asyncio.sleep(5)
-        await scanner.stop()
-        return found
+                    def notification_handler(sender: int, data: bytearray) -> None:
+                        weight, details = parse_weight(data)
+                        if weight is None:
+                            return
+                        zero_seen = self._zero_reported.get(address, False)
+                        if weight == 0:
+                            if zero_seen:
+                                return  # ignore repeated zeros
+                            self._zero_reported[address] = True
+                            _LOGGER.debug(
+                                "Zero payload (suppressed for HA stats) from %s: %s",
+                                address,
+                                format_payload(data),
+                            )
+                            return
 
-    async def _connect_and_listen(self, device: BLEDevice) -> None:
-        """Connect to a device and read/stream weight."""
+                        # Non-zero reading: reset zero suppression and propagate.
+                        self._zero_reported[address] = False
+                        _LOGGER.debug("Payload from %s: %s", address, format_payload(data))
+                        self._notify(address, weight, details)
+                        if self.scan_interval > 0:
+                            self.hass.loop.call_soon_threadsafe(done_event.set)
+
+                    for char in notify_chars:
+                        try:
+                            await client.start_notify(char.uuid, notification_handler)
+                            _LOGGER.debug("Subscribed to %s on %s", char.uuid, address)
+                        except Exception as err:  # pylint: disable=broad-except
+                            _LOGGER.debug("Failed to subscribe %s: %s", char.uuid, err)
+
+                    if self.scan_interval == 0:
+                        # Stay connected indefinitely unless stopped or disconnected.
+                        while not self._stop_event.is_set() and client.is_connected:
+                            await asyncio.sleep(1)
+                    else:
+                        try:
+                            await asyncio.wait_for(done_event.wait(), timeout=LISTEN_WINDOW)
+                        except asyncio.TimeoutError:
+                            _LOGGER.debug("No data from %s within window", address)
+
+                    for char in notify_chars:
+                        try:
+                            await client.stop_notify(char.uuid)
+                        except Exception:  # pylint: disable=broad-except
+                            pass
+
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.debug("Error while connected to %s: %s", address, err)
+
+            if self._stop_event.is_set():
+                break
+
+            # Decide wait time before next attempt
+            wait_time = self.scan_interval if self.scan_interval > 0 else self.off_scan_interval
+            await self._wait_with_stop(wait_time)
+
+    async def _wait_with_stop(self, timeout: int) -> None:
+        """Wait for timeout or stop event, whichever comes first."""
+        if timeout <= 0:
+            return
         try:
-            client = await establish_connection(
-                BleakClient, device, device.address, ble_device_callback=None
-            )
-            async with client:
-                if not client.is_connected:
-                    _LOGGER.warning("Failed to connect to %s", device.address)
-                    return
-
-                services = client.services
-                notify_chars = [
-                    char
-                    for svc in services
-                    for char in svc.characteristics
-                    if "notify" in char.properties or "indicate" in char.properties
-                ]
-
-                if not notify_chars:
-                    _LOGGER.debug("No notify characteristics on %s", device.address)
-                    return
-
-                done_event = asyncio.Event()
-
-                def notification_handler(sender: int, data: bytearray) -> None:
-                    weight, details = parse_weight(data)
-                    if weight is None:
-                        return
-                    zero_seen = self._zero_reported.get(device.address, False)
-                    if weight == 0:
-                        if zero_seen:
-                            return  # ignore repeated zeros
-                        self._zero_reported[device.address] = True
-                        _LOGGER.debug(
-                            "Zero payload (suppressed for HA stats) from %s: %s",
-                            device.address,
-                            format_payload(data),
-                        )
-                        return
-
-                    # Non-zero reading: reset zero suppression and propagate.
-                    self._zero_reported[device.address] = False
-                    _LOGGER.debug("Payload from %s: %s", device.address, format_payload(data))
-                    self._notify(device.address, weight, details)
-                    if self.scan_interval > 0:
-                        # For periodic mode, stop after first useful reading.
-                        self.hass.loop.call_soon_threadsafe(done_event.set)
-
-                for char in notify_chars:
-                    try:
-                        await client.start_notify(char.uuid, notification_handler)
-                        _LOGGER.debug("Subscribed to %s on %s", char.uuid, device.address)
-                    except Exception as err:  # pylint: disable=broad-except
-                        _LOGGER.debug("Failed to subscribe %s: %s", char.uuid, err)
-
-                if self.scan_interval == 0:
-                    await asyncio.wait(
-                        [self._stop_event.wait()],
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                else:
-                    try:
-                        await asyncio.wait_for(done_event.wait(), timeout=LISTEN_WINDOW)
-                    except asyncio.TimeoutError:
-                        _LOGGER.debug("No data from %s within window", device.address)
-
-                for char in notify_chars:
-                    try:
-                        await client.stop_notify(char.uuid)
-                    except Exception:  # pylint: disable=broad-except
-                        pass
-
-        except Exception as err:  # pylint: disable=broad-except
-            _LOGGER.debug("Error connecting to %s: %s", device.address, err)
+            await asyncio.wait_for(self._stop_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return

@@ -13,23 +13,23 @@ Originally this was made to collect weight of my parrots, from their cage, durin
 
 A lightweight custom component lives in `custom_components/sencor_scale`:
 
-- Automatically discovers nearby Sencor scales (`sencorfood`) and creates sensors per device (rename them in Home Assistant UI as needed).
 - Configurable scan interval: set to `0` for continuous streaming, or any positive number of seconds to poll at that cadence (each poll opens a short BLE session and listens for weight notifications).
 - Repeated zero weights are suppressed for Home Assistant statistics (first zero logs once for debugging; subsequent zeros are ignored until a non-zero reading arrives).
+- Configurable offline retry interval so the integration keeps trying when the scale is off/unavailable and stays connected as long as possible when it is on.
 
 ### Install
 
 1) Copy the `custom_components/sencor_scale` folder into your Home Assistant `/config/custom_components/` directory.
 2) Restart Home Assistant.
-3) Add the integration via **Settings → Devices & Services → Add Integration → Sencor Kitchen Scale**. The setup flow scans for nearby Sencor scales and lists them by MAC address (you can rename before finishing).
-4) Choose your scan interval (seconds). `0` = always connected streaming; otherwise a polling loop with a short listen window per cycle.
+3) Add the integration via **Settings → Devices & Services → Add Integration → Sencor Kitchen Scale**. Enter the scale's Bluetooth MAC address and (optionally) a friendly name.
+4) Choose your scan interval (seconds) and offline retry interval (seconds). `0` scan interval = keep the connection open; otherwise connect, listen briefly, disconnect, and wait that many seconds. Offline retry interval is used when the device is unreachable to keep trying without giving up.
 
 ### HACS install (recommended)
 
 1) In HACS, open **Integrations → ⋮ → Custom repositories**.
 2) Add your repo URL, category **Integration**, and save.
 3) Find **Sencor Kitchen Scale** in HACS, install, then restart Home Assistant.
-4) Add the integration via **Settings → Devices & Services** and pick your scan interval (`0` for continuous, otherwise seconds between polls).
+4) Add the integration via **Settings → Devices & Services**, enter the scale MAC address, scan interval (`0` for continuous), and offline retry interval (seconds).
 5) For updates, just pull the latest release in HACS; it handles copying to `/config/custom_components`.
 
 ### Notes/assumptions

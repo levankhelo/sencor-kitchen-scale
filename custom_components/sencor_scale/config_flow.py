@@ -4,12 +4,13 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_DEVICES,
     CONF_MAC_ADDRESS,
+    CONF_OFF_SCAN_INTERVAL,
     CONF_SCAN_INTERVAL,
+    DEFAULT_OFF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
@@ -28,9 +29,10 @@ class SencorScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             mac = user_input[CONF_MAC_ADDRESS].strip()
             scan_interval = user_input[CONF_SCAN_INTERVAL]
+            off_scan_interval = user_input[CONF_OFF_SCAN_INTERVAL]
             if not mac:
                 errors["base"] = "no_mac"
-            elif scan_interval < 0:
+            elif scan_interval < 0 or off_scan_interval < 0:
                 errors["base"] = "invalid_scan_interval"
             else:
                 await self.async_set_unique_id(mac.lower())
@@ -40,6 +42,7 @@ class SencorScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     title="Sencor Kitchen Scales",
                     data={
                         CONF_SCAN_INTERVAL: scan_interval,
+                        CONF_OFF_SCAN_INTERVAL: off_scan_interval,
                         CONF_DEVICES: devices,
                     },
                 )
@@ -48,7 +51,12 @@ class SencorScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_MAC_ADDRESS): str,
                 vol.Optional("name"): str,
-                vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.Coerce(int),
+                vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.Coerce(
+                    int
+                ),
+                vol.Required(CONF_OFF_SCAN_INTERVAL, default=DEFAULT_OFF_SCAN_INTERVAL): vol.Coerce(
+                    int
+                ),
             }
         )
         return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
@@ -65,12 +73,16 @@ class SencorScaleOptionsFlowHandler(config_entries.OptionsFlow):
     ) -> config_entries.FlowResult:
         errors: dict[str, str] = {}
 
+        devices = self.config_entry.options.get(
+            CONF_DEVICES, self.config_entry.data.get(CONF_DEVICES, {})
+        )
+        mac, current_name = next(iter(devices.items())) if devices else ("", "")
+
         if user_input is not None:
-            devices = self.config_entry.data.get(CONF_DEVICES, {})
-            mac, current_name = next(iter(devices.items())) if devices else ("", "")
-            new_name = user_input.get("name", current_name or mac)
             scan_interval = user_input[CONF_SCAN_INTERVAL]
-            if scan_interval < 0:
+            off_scan_interval = user_input[CONF_OFF_SCAN_INTERVAL]
+            new_name = user_input.get("name", current_name or mac)
+            if scan_interval < 0 or off_scan_interval < 0:
                 errors["base"] = "invalid_scan_interval"
             else:
                 updated_devices = {mac: new_name} if mac else devices
@@ -78,26 +90,22 @@ class SencorScaleOptionsFlowHandler(config_entries.OptionsFlow):
                     title=self.config_entry.title,
                     data={
                         CONF_SCAN_INTERVAL: scan_interval,
+                        CONF_OFF_SCAN_INTERVAL: off_scan_interval,
                         CONF_DEVICES: updated_devices or devices,
                     },
                 )
 
-        current_interval = (
-            self.config_entry.options.get(
-                CONF_SCAN_INTERVAL, self.config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-            )
-        )
-        devices = self.config_entry.options.get(
-            CONF_DEVICES, self.config_entry.data.get(CONF_DEVICES, {})
-        )
-        mac, current_name = next(iter(devices.items())) if devices else ("", "")
+        base_data = self.config_entry.options or self.config_entry.data
+        current_interval = base_data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        current_off_interval = base_data.get(CONF_OFF_SCAN_INTERVAL, DEFAULT_OFF_SCAN_INTERVAL)
 
-        schema_dict: dict[Any, Any] = {
-            vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.Coerce(int),
-            vol.Optional("name", default=current_name or mac): str,
-        }
-
-        data_schema = vol.Schema(schema_dict)
+        data_schema = vol.Schema(
+            {
+                vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.Coerce(int),
+                vol.Required(CONF_OFF_SCAN_INTERVAL, default=current_off_interval): vol.Coerce(int),
+                vol.Optional("name", default=current_name or mac): str,
+            }
+        )
         return self.async_show_form(step_id="init", data_schema=data_schema, errors=errors)
 
 
