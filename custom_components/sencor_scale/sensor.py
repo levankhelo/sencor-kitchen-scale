@@ -54,7 +54,7 @@ class SencorScaleSensor(SensorEntity):
     _attr_icon = "mdi:scale"
     _attr_device_class = SensorDeviceClass.WEIGHT
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = UnitOfMass.GRAM
+    _attr_native_unit_of_measurement = UnitOfMass.GRAMS
 
     def __init__(self, manager: SencorScaleManager, address: str, name: str) -> None:
         self._manager = manager
