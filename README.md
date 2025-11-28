@@ -1,5 +1,6 @@
 # sencor-kitchen-scale
 Extract scale data from Sencor kitchen scales using BLE (Bluetooth Low Energy).
+Originally this was made to collect weight of my parrots, from their cage, during their treatment, so let me know if you have any suggestions!
 
 ## Features
 
