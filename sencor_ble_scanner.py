@@ -70,7 +70,10 @@ def format_data(data: bytes | bytearray) -> str:
         if len(payload) < 4:
             return None
         # Weight is stored as two bytes (high, low) at positions 2 and 3.
-        return (payload[2] << 8) | payload[3]
+        raw_weight = (payload[2] << 8) | payload[3]
+        # Byte 7 appears to carry sign info: 0 for positive, 1 for negative.
+        sign = -1 if len(payload) > 7 and payload[7] == 1 else 1
+        return sign * raw_weight
 
     parts = [f"[{timestamp}] HEX: {hex_str}", f"RAW: {list(data)}"]
 
