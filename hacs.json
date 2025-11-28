@@ -1,0 +1,5 @@
+{
+  "name": "Sencor Kitchen Scale",
+  "domains": ["sencor_scale"],
+  "render_readme": true
+}
