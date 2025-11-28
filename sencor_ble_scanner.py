@@ -57,23 +57,36 @@ async def find_sencorfood_devices(timeout: float = 10.0) -> list[BLEDevice]:
 
 def format_data(data: bytes | bytearray) -> str:
     """
-    Format received BLE data for display.
+    Format received BLE data for display and include parsed weight.
 
-    Args:
-        data: Raw bytes received from BLE device
-
-    Returns:
-        Formatted string representation of the data
+    The scale payload encodes weight in bytes 2 and 3 (big endian), so we
+    extract that when available to show the actual weight alongside the
+    raw bytes.
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     hex_str = data.hex()
 
-    # Try to decode as UTF-8 if possible
+    def extract_weight(payload: bytes | bytearray) -> int | None:
+        if len(payload) < 4:
+            return None
+        # Weight is stored as two bytes (high, low) at positions 2 and 3.
+        return (payload[2] << 8) | payload[3]
+
+    parts = [f"[{timestamp}] HEX: {hex_str}", f"RAW: {list(data)}"]
+
+    # Include decoded text if available, but keep RAW/WEIGHT for clarity.
     try:
         text_str = data.decode("utf-8").strip()
-        return f"[{timestamp}] HEX: {hex_str} | TEXT: {text_str}"
+        if text_str:
+            parts.append(f"TEXT: {text_str}")
     except UnicodeDecodeError:
-        return f"[{timestamp}] HEX: {hex_str} | RAW: {list(data)}"
+        pass
+
+    weight = extract_weight(data)
+    if weight is not None:
+        parts.append(f"WEIGHT: {weight}")
+
+    return " | ".join(parts)
 
 
 async def connect_and_stream_data(
