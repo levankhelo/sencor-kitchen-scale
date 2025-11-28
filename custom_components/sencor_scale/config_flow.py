@@ -1,20 +1,16 @@
 from __future__ import annotations
 
 from typing import Any
-import asyncio
 
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
-from bleak import BleakScanner
-from bleak.backends.device import BLEDevice
-from bleak.backends.scanner import AdvertisementData
 
 from .const import (
     CONF_DEVICES,
+    CONF_MAC_ADDRESS,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
-    DEVICE_NAME,
     DOMAIN,
 )
 
@@ -23,7 +19,6 @@ class SencorScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for the Sencor scale integration."""
 
     VERSION = 1
-    _discovered: list[BLEDevice]
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -31,14 +26,16 @@ class SencorScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            mac = user_input[CONF_MAC_ADDRESS].strip()
             scan_interval = user_input[CONF_SCAN_INTERVAL]
-            if scan_interval < 0:
+            if not mac:
+                errors["base"] = "no_mac"
+            elif scan_interval < 0:
                 errors["base"] = "invalid_scan_interval"
             else:
-                devices: dict[str, str] = {}
-                for device in getattr(self, "_discovered", []):
-                    field = f"name_{device.address}"
-                    devices[device.address] = user_input.get(field, device.address)
+                await self.async_set_unique_id(mac.lower())
+                self._abort_if_unique_id_configured()
+                devices: dict[str, str] = {mac: user_input.get("name", mac)}
                 return self.async_create_entry(
                     title="Sencor Kitchen Scales",
                     data={
@@ -47,34 +44,14 @@ class SencorScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
 
-        # Discover devices for this flow
-        self._discovered = await self._discover_devices()
-        if not self._discovered:
-            errors["base"] = "no_devices_found"
-
-        schema_dict: dict[Any, Any] = {
-            vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.Coerce(int)
-        }
-        for device in self._discovered:
-            schema_dict[vol.Optional(f"name_{device.address}", default=device.address)] = str
-
-        data_schema = vol.Schema(schema_dict)
+        data_schema = vol.Schema(
+            {
+                vol.Required(CONF_MAC_ADDRESS): str,
+                vol.Optional("name"): str,
+                vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.Coerce(int),
+            }
+        )
         return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
-
-    async def _discover_devices(self) -> list[BLEDevice]:
-        """Scan for Sencor devices for a short window."""
-        found: list[BLEDevice] = []
-
-        def detection_callback(device: BLEDevice, adv_data: AdvertisementData) -> None:
-            if device.name and DEVICE_NAME.lower() in device.name.lower():
-                if all(device.address != d.address for d in found):
-                    found.append(device)
-
-        scanner = BleakScanner(detection_callback=detection_callback)
-        await scanner.start()
-        await asyncio.sleep(8)
-        await scanner.stop()
-        return found
 
 
 class SencorScaleOptionsFlowHandler(config_entries.OptionsFlow):
@@ -89,16 +66,14 @@ class SencorScaleOptionsFlowHandler(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            devices = self.config_entry.data.get(CONF_DEVICES, {})
+            mac, current_name = next(iter(devices.items())) if devices else ("", "")
+            new_name = user_input.get("name", current_name or mac)
             scan_interval = user_input[CONF_SCAN_INTERVAL]
             if scan_interval < 0:
                 errors["base"] = "invalid_scan_interval"
             else:
-                devices = self.config_entry.data.get(CONF_DEVICES, {})
-                updated_devices = {}
-                for address in devices:
-                    updated_devices[address] = user_input.get(
-                        f"name_{address}", devices[address]
-                    )
+                updated_devices = {mac: new_name} if mac else devices
                 return self.async_create_entry(
                     title=self.config_entry.title,
                     data={
@@ -115,12 +90,12 @@ class SencorScaleOptionsFlowHandler(config_entries.OptionsFlow):
         devices = self.config_entry.options.get(
             CONF_DEVICES, self.config_entry.data.get(CONF_DEVICES, {})
         )
+        mac, current_name = next(iter(devices.items())) if devices else ("", "")
 
         schema_dict: dict[Any, Any] = {
-            vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.Coerce(int)
+            vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.Coerce(int),
+            vol.Optional("name", default=current_name or mac): str,
         }
-        for address, name in devices.items():
-            schema_dict[vol.Optional(f"name_{address}", default=name)] = str
 
         data_schema = vol.Schema(schema_dict)
         return self.async_show_form(step_id="init", data_schema=data_schema, errors=errors)

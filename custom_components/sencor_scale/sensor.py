@@ -3,8 +3,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfMass
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
@@ -47,7 +52,9 @@ class SencorScaleSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:scale"
-    _attr_native_unit_of_measurement = "g"
+    _attr_device_class = SensorDeviceClass.WEIGHT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfMass.GRAM
 
     def __init__(self, manager: SencorScaleManager, address: str, name: str) -> None:
         self._manager = manager

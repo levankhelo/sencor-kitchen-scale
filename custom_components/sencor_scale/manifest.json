@@ -1,7 +1,7 @@
 {
   "domain": "sencor_scale",
   "name": "Sencor Kitchen Scale",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "documentation": "https://github.com/levankhelo/sencor-kitchen-scale",
   "requirements": [
     "bleak>=0.22.2",
@@ -11,5 +11,5 @@
     "@levankhelo"
   ],
   "config_flow": true,
-  "iot_class": "local_polling"
+  "iot_class": "local_push"
 }
